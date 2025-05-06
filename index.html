@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQL AI Agent Chat</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+
+    <style>
+        body {
+            background-color: #f8f9fa; /* Light grey background from Bootstrap */
+            padding-top: 20px; /* Add some padding at the top */
+        }
+        /* Use Bootstrap container for better centering and responsiveness */
+        #chat-container-wrapper {
+            max-width: 800px; /* Max width for the chat */
+            margin: auto; /* Center the container */
+        }
+        #chat-container {
+            height: 85vh; /* Adjust height */
+            display: flex;
+            flex-direction: column;
+            background-color: #fff;
+            border: 1px solid #dee2e6; /* Bootstrap border color */
+            border-radius: 0.375rem; /* Bootstrap border radius */
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075); /* Bootstrap shadow */
+            overflow: hidden; /* Prevent content overflow */
+        }
+        #chat-box {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 1rem; /* Bootstrap padding unit */
+        }
+        .message {
+            margin-bottom: 1rem;
+            padding: 0.75rem 1rem;
+            border-radius: 1rem; /* Slightly rounder */
+            line-height: 1.5;
+            max-width: 85%;
+            word-wrap: break-word;
+        }
+        .user-message {
+            background-color: #0d6efd; /* Bootstrap primary color */
+            color: white;
+            margin-left: auto; /* Push to right */
+            text-align: right; /* Align text right */
+        }
+        .ai-message {
+            background-color: #e9ecef; /* Bootstrap secondary background */
+            color: #212529; /* Bootstrap default text color */
+            margin-right: auto; /* Push to left */
+        }
+        .status-message {
+            font-style: italic;
+            color: #6c757d; /* Bootstrap secondary text color */
+            font-size: 0.9em;
+            text-align: center;
+            margin: 0.5rem 0;
+        }
+        .error-message {
+             color: #dc3545; /* Bootstrap danger color */
+             font-weight: bold;
+             text-align: center;
+             margin: 0.75rem 0;
+        }
+        #input-area {
+            display: flex;
+            padding: 1rem;
+            border-top: 1px solid #dee2e6; /* Bootstrap border */
+            background-color: #f8f9fa; /* Match body background */
+        }
+        /* Use Bootstrap form-control class for input */
+        #message-input {
+            flex-grow: 1;
+            margin-right: 0.5rem;
+            /* Let Bootstrap handle the styling via class */
+        }
+        /* Use Bootstrap button classes */
+        #send-button {
+            /* Let Bootstrap handle the styling via class */
+            flex-shrink: 0; /* Prevent button from shrinking */
+        }
+
+        /* Bootstrap Table Styling inside AI messages */
+        .ai-message table {
+            /* These classes will be added by Bootstrap CSS */
+            /* Ensure the generated HTML is just <table>... */
+            width: 100%;
+            margin-bottom: 1rem;
+            color: #212529;
+            vertical-align: top;
+            border-color: #dee2e6;
+        }
+         .ai-message th, .ai-message td {
+            border: 1px solid #dee2e6;
+            padding: 0.5rem 0.5rem;
+         }
+         .ai-message thead {
+            background-color: #f8f9fa; /* Light header for tables */
+         }
+
+         /* Bootstrap Code Block Styling */
+        .ai-message pre {
+            /* Let Bootstrap style this somewhat by default */
+            display: block;
+            padding: 1rem;
+            margin-top: 0;
+            margin-bottom: 1rem;
+            overflow: auto;
+            font-size: 0.875em; /* Bootstrap code font size */
+            color: #212529;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 0.25rem;
+        }
+        .ai-message code:not(pre code) { /* Inline code */
+             font-size: 0.875em;
+             color: #d63384; /* Bootstrap pinkish color for code */
+             word-wrap: break-word;
+             background-color: transparent; /* Avoid double background if inside pre */
+        }
+    </style>
+</head>
+<body>
+    <div id="chat-container-wrapper" class="container">
+        <div id="chat-container">
+            <div id="chat-box">
+                <div class="ai-message message">Hello! Ask me something about the database.</div>
+            </div>
+            <div id="input-area">
+                <input type="text" id="message-input" class="form-control" placeholder="Type your message...">
+                <button id="send-button" class="btn btn-primary">
+                    <i class="bi bi-send"></i> Send </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <script>
+        // Ensure the DOM is fully loaded before running script
+        document.addEventListener('DOMContentLoaded', (event) => {
+
+            const chatBox = document.getElementById('chat-box');
+            const messageInput = document.getElementById('message-input');
+            const sendButton = document.getElementById('send-button');
+
+            let currentAiMessageElement = null;
+            let currentThreadId = localStorage.getItem('chatThreadId'); // Reuse thread ID
+
+            // Check if marked is loaded (for debugging)
+            if (typeof marked === 'undefined') {
+                console.error("Marked.js library is not loaded!");
+                // Optionally display an error to the user
+                 addMessage("Error: Markdown renderer failed to load.", 'ai', 'error');
+            } else {
+                 console.log("Marked.js loaded successfully.");
+            }
+
+            function addMessage(text, sender, type = 'message') {
+                const messageElement = document.createElement('div');
+                // Add base Bootstrap class for potential styling, remove if causing issues
+                // messageElement.classList.add('p-2'); // Bootstrap padding
+
+                messageElement.classList.add('message', `${sender}-message`);
+
+                if (sender === 'ai' && type === 'message') {
+                    if (typeof marked !== 'undefined') {
+                        // Use marked to render Markdown content
+                        // Default options (gfm: true) usually handle tables, code blocks etc.
+                        messageElement.innerHTML = marked.parse(text, { breaks: true, gfm: true }); // Render markdown
+                         // Add Bootstrap table classes AFTER rendering
+                         const tables = messageElement.querySelectorAll('table');
+                         tables.forEach(table => {
+                              table.classList.add('table', 'table-bordered', 'table-striped', 'table-sm'); // Add BS classes
+                         });
+                    } else {
+                         // Fallback if marked fails to load
+                         messageElement.textContent = "[Markdown Error] " + text;
+                    }
+                } else {
+                    messageElement.textContent = text; // Keep user/status/error messages plain
+                }
+
+                // Apply status/error styling (remove message background/padding)
+                if (type === 'status') {
+                    messageElement.classList.remove(`${sender}-message`, 'message');
+                    messageElement.classList.add('status-message');
+                } else if (type === 'error') {
+                    messageElement.classList.remove(`${sender}-message`, 'message');
+                    messageElement.classList.add('error-message');
+                }
+
+                chatBox.appendChild(messageElement);
+                // Ensure scrolling happens *after* content is added and potentially rendered
+                requestAnimationFrame(() => {
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                });
+                return messageElement;
+            }
+
+
+            async function handleFetchStream(url, body) {
+                 messageInput.disabled = true; // Disable input during processing
+                 sendButton.disabled = true;
+                 let currentContent = ''; // Accumulate stream content
+                 // Create placeholder immediately
+                 currentAiMessageElement = addMessage("...", 'ai');
+
+                 try {
+                     const response = await fetch(url, {
+                         method: 'POST',
+                         headers: { 'Content-Type': 'application/json' },
+                         body: JSON.stringify(body)
+                     });
+
+                     if (!response.ok) {
+                         const errorText = await response.text();
+                         throw new Error(`HTTP error! status: ${response.status}, ${errorText}`);
+                     }
+
+                     if (!response.body) {
+                         throw new Error("Response body is missing.");
+                     }
+
+                     const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+                     let buffer = '';
+
+                     while (true) {
+                         const { value, done } = await reader.read();
+                         if (done) {
+                             console.log("Stream finished.");
+                             // Final update with accumulated content
+                              if (currentAiMessageElement && typeof marked !== 'undefined') {
+                                   // currentAiMessageElement.innerHTML = marked.parse(currentContent, { breaks: true, gfm: true });
+                                   // Add BS table classes after final parse
+                                   currentAiMessageElement.textContent = currentContent;
+                                   const tables = currentAiMessageElement.querySelectorAll('table');
+                                   tables.forEach(table => {
+                                        table.classList.add('table', 'table-bordered', 'table-striped', 'table-sm');
+                                   });
+                                   requestAnimationFrame(() => { chatBox.scrollTop = chatBox.scrollHeight; });
+                              } else if (currentAiMessageElement) {
+                                    currentAiMessageElement.textContent = currentContent; // Fallback
+                                    requestAnimationFrame(() => { chatBox.scrollTop = chatBox.scrollHeight; });
+                              }
+                             break; // Exit loop
+                         }
+
+                         buffer += value;
+                         let lines = buffer.split('\n');
+                         buffer = lines.pop(); // Keep potential partial line
+
+                         for (const line of lines) {
+                            if (line.startsWith('data:')) {
+                                const jsonData = line.substring(5).trim();
+                                if (!jsonData) continue; // Skip empty data lines
+   
+                                try {
+                                    const eventData = JSON.parse(jsonData);
+   
+                                    if (eventData.event === 'metadata') {
+                                        currentThreadId = eventData.data.thread_id;
+                                        localStorage.setItem('chatThreadId', currentThreadId);
+                                        console.log("Received metadata, thread_id:", currentThreadId);
+                                    } else if (eventData.event === 'ui_stream') {
+                                        // --- Existing ui_stream handling ---
+                                        currentContent += eventData.data;
+                                        if (currentAiMessageElement) {
+                                            // Update incrementally with cursor
+                                            const textToRender = currentContent + "█";
+                                            if (typeof marked !== 'undefined') {
+                                                currentAiMessageElement.innerHTML = marked.parse(textToRender, { breaks: true, gfm: true });
+                                                const tables = currentAiMessageElement.querySelectorAll('table');
+                                                tables.forEach(table => {
+                                                    table.classList.add('table', 'table-bordered', 'table-striped', 'table-sm');
+                                                });
+                                            } else {
+                                                currentAiMessageElement.textContent = textToRender; // Fallback
+                                            }
+                                            requestAnimationFrame(() => { chatBox.scrollTop = chatBox.scrollHeight; });
+                                        }
+                                    } else if (eventData.event === 'ui_final') { // <-- ADD THIS BLOCK
+                                        // --- Handle the final complete answer ---
+                                        console.log("Received ui_final event.");
+                                        const finalAnswer = eventData.data;
+                                        currentContent = finalAnswer; // Update accumulated content definitively
+   
+                                        if (currentAiMessageElement) {
+                                            // Set the final, complete content without the cursor
+                                            if (typeof marked !== 'undefined') {
+                                                currentAiMessageElement.innerHTML = marked.parse(finalAnswer, { breaks: true, gfm: true });
+                                                // Re-apply table classes after final parse
+                                                const tables = currentAiMessageElement.querySelectorAll('table');
+                                                tables.forEach(table => {
+                                                    table.classList.add('table', 'table-bordered', 'table-striped', 'table-sm');
+                                                });
+                                            } else {
+                                                currentAiMessageElement.textContent = finalAnswer; // Fallback
+                                            }
+                                            // Ensure scroll after final update
+                                            requestAnimationFrame(() => { chatBox.scrollTop = chatBox.scrollHeight; });
+                                        }
+                                        // NOTE: We might receive 'stream_end' shortly after this.
+                                        // The 'finally' block or 'done' condition will handle cleanup.
+   
+                                    } else if (eventData.event === 'ui_status') {
+                                        // Optional: maybe hide status messages once final answer starts or arrives?
+                                         addMessage(eventData.data, 'ai', 'status');
+                                    } else if (eventData.event === 'error') {
+                                           handleError(new Error(eventData.data));
+                                           reader.cancel(); // Stop processing
+                                           return; // Exit loop
+                                    } else if (eventData.event === 'stream_end') {
+                                           console.log("Received stream_end event.");
+                                           // Final update with accumulated content (if ui_final didn't arrive)
+                                           // This acts as a fallback if ui_final wasn't sent or received
+                                           if (currentAiMessageElement && !currentAiMessageElement.innerHTML.includes(currentContent)) { // Check if ui_final already set it
+                                                console.log("Performing final update from stream_end (fallback).")
+                                                const finalContentNoCursor = currentContent; // Content accumulated via ui_stream
+                                                if (typeof marked !== 'undefined') {
+                                                     currentAiMessageElement.innerHTML = marked.parse(finalContentNoCursor, { breaks: true, gfm: true });
+                                                     const tables = currentAiMessageElement.querySelectorAll('table');
+                                                     tables.forEach(table => {
+                                                          table.classList.add('table', 'table-bordered', 'table-striped', 'table-sm');
+                                                     });
+                                                } else {
+                                                      currentAiMessageElement.textContent = finalContentNoCursor; // Fallback
+                                                }
+                                                requestAnimationFrame(() => { chatBox.scrollTop = chatBox.scrollHeight; });
+                                           }
+                                           reader.cancel(); // Ensure reader stops
+                                           return; // Exit loop
+                                    }
+                                } catch (e) {
+                                    console.error("Error parsing SSE data line:", line, "Error:", e);
+                                }
+                            }
+                        } // end for loop
+                    } // end while loop
+                } catch (error) {
+                      handleError(error);
+                      // Ensure placeholder is cleared on error
+                      if(currentAiMessageElement) {
+                          currentAiMessageElement.remove(); // Remove the "..." placeholder
+                          currentAiMessageElement = null;
+                      }
+                 } finally {
+                      console.log("Stream handling finished or errored.");
+                      // Remove cursor if present from final content
+                       if (currentAiMessageElement && currentAiMessageElement.innerHTML.endsWith("█")) {
+                            currentAiMessageElement.innerHTML = currentAiMessageElement.innerHTML.slice(0, -1);
+                       }
+                      messageInput.disabled = false; // Re-enable input
+                      sendButton.disabled = false;
+                      currentAiMessageElement = null; // Reset placeholder var
+                 }
+            } // end handleFetchStream
+
+
+            function handleError(error) {
+                console.error("Chat error:", error);
+                addMessage(`Error: ${error.message}`, 'ai', 'error');
+                messageInput.disabled = false; // Ensure input is enabled
+                sendButton.disabled = false;
+                currentAiMessageElement = null; // Reset placeholder var
+            }
+
+            sendButton.addEventListener('click', () => {
+                const message = messageInput.value.trim();
+                if (message && !sendButton.disabled) { // Prevent double clicks
+                    addMessage(message, 'user'); // Add user message to chat
+                    handleFetchStream('/stream_query', { message: message, thread_id: currentThreadId });
+                    messageInput.value = ''; // Clear input after initiating stream
+                }
+            });
+
+            messageInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !sendButton.disabled) {
+                     sendButton.click();
+                }
+            });
+
+             // Initial focus
+             messageInput.focus();
+
+             if (currentThreadId) {
+                  console.log("Using existing thread ID:", currentThreadId);
+             } else {
+                   console.log("No existing thread ID found, a new one will be generated on the first message.");
+             }
+
+        }); // End DOMContentLoaded
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,13 @@
+langchain
+langgraph
+langchain-google-genai
+langchain-community
+sqlalchemy
+dotenv
+fastapi
+uvicorn
+fastapi-sse
+pydantic>=2.0
+python-dotenv
+requests
+pyodbc
